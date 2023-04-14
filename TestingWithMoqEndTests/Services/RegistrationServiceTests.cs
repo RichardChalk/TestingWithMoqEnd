@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Moq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,14 +12,16 @@ namespace TestingWithFakesTests.Services
     public class RegistrationServiceTests
     {
         private readonly RegistrationService _sut;
-        private readonly FakeUserRepository _userRepository;
-        private readonly FakeEmailService _emailService;
+
+        private readonly Mock<IUserRepository> _userRepositoryMock;
+        private readonly Mock<IEmailService> _emailServiceMock;
 
         public RegistrationServiceTests()
         {
-            _userRepository = new FakeUserRepository();
-            _emailService = new FakeEmailService();
-            _sut = new RegistrationService(_userRepository, _emailService);
+            _userRepositoryMock = new Mock<IUserRepository>();
+            _emailServiceMock = new Mock<IEmailService>();
+
+            _sut = new RegistrationService(_userRepositoryMock.Object, _emailServiceMock.Object);
         }
 
         // Test 1 Kontrollerar att användaren inte redan finns
@@ -27,8 +30,7 @@ namespace TestingWithFakesTests.Services
         {
             // ARRANGE
             var email = "richard@gmail.com";
-            _userRepository.ExistingUsers.Clear();
-            _userRepository.ExistingUsers.Add(email);
+            _userRepositoryMock.Setup(u => u.UserExists(email)).Returns(true);
 
             // ACT
             var result = _sut.Register(email);
@@ -57,11 +59,9 @@ namespace TestingWithFakesTests.Services
         {
             // ARRANGE
             var email = "richard@gmail.com";
-            _userRepository.ExistingUsers.Clear();
-            for (int i = 1; i <= 11; i++)
-            {
-                _userRepository.ExistingUsers.Add((i.ToString() + "@randomEmail.com") );
-            }
+
+            // Varje gång GetRegisteredCountToday() anrops... ska 11 returneras
+            _userRepositoryMock.Setup(u => u.GetRegisteredCountToday()).Returns(11);
 
             // ACT
             var result = _sut.Register(email);
@@ -70,34 +70,39 @@ namespace TestingWithFakesTests.Services
             Assert.AreEqual(RegistrationStatus.TooManyRegistrationsToday, result);
         }
 
-        // Test 4 Endast 10 nya användare per dag
+        // Test 4 Efter lyckad registrering ska ett välkomst-email skickas
         // Här testar vi att om registreringen har blivit OK...
         // ... delegerar vi till EmailService...
         // Så vi vill bekräfta att metoden SendWelcomeEmail(string email)
         // har blivit anropad!
         [TestMethod]
-        public void Registration_OK_SendWelcomeEmail_Should_Be_Called()
+        public void
+        Registration_OK_SendWelcomeEmail_Should_Be_Called()
         {
             // ARRANGE
             var email = "richard@gmail.com";
-            _userRepository.ExistingUsers.Clear();
 
             // ACT
             var result = _sut.Register(email);
 
             // ASSERT
-            Assert.IsTrue(_emailService.SendWelcomeEmailCalled);
+            // Kontrollera att SendWelcomeEmail() 
+            // anropas 1 gång om successful
+            _emailServiceMock.Verify(
+                e => e.SendWelcomeEmail(
+                It.IsAny<string>()), Times.Once());
         }
 
         // Test 5 Bonus
         // Om registreringen har blivit OK...
         // ... får vi tillbaka RegistrationStatus.Ok
+        // Eftersom vi inte längre använda oss av listan "ExistingUsers"
+        // ... behöver inte vi anropa ett mockobjekt alls...
         [TestMethod]
         public void Registration_OK_Returns_Ok()
         {
             // ARRANGE
             var email = "richard@gmail.com";
-            _userRepository.ExistingUsers.Clear();
 
             // ACT
             var result = _sut.Register(email);
